@@ -750,7 +750,7 @@ def main():
             "--write-preferred",
             action="store_true",
             help="Write preferred versions to a file.",
-            default=False
+            default=True
         )
         args = parser.parse_args()
 
