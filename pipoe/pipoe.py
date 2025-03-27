@@ -120,9 +120,19 @@ def package_to_bb_name(package):
     return package.lower().replace("_", "-").replace(".", "-")
 
 
-def translate_license(license, default_license):
+def translate_license(license, classifiers, default_license):
     try:
-        return licenses.LICENSES[license]
+        try:
+            if license not in [ '', None ]:
+                return licenses.LICENSES[license.strip("'").strip('"')]
+        except:
+            pass
+
+        for classifier in classifiers:
+            if classifier.startswith("License"):
+                return licenses.LICENSES[classifier]
+
+        raise Exception("No license found")
     except:
         if default_license:
             return default_license
@@ -202,15 +212,31 @@ def get_package_file_info(package, version, uri):
                 and not os.path.isdir(os.path.join(tmpdir, src_dir, f))
             )
         except:
-            license_file = "setup.py"
+            license_file = None
 
         # Try to catch build depends into setup.py file
-        with open(os.path.join(tmpdir, src_dir, "setup.py"), 'r+') as f:
-            data = mmap.mmap(f.fileno(), 0)
-            match = re.search(b'^(\s*)setup_requires( *)=( *)([\[|\(]*)(.*)([\]|\)]*)', data, re.MULTILINE)
-            if match:
-                for bd in match.group(5).replace(b'[', b'').replace(b']', b'').replace(b'(', b'').replace(b')', b'').strip().split(b","):
-                     build_deps.extend(gather_package_build_depends(bd, data))
+        setup_py = os.path.join(tmpdir, src_dir, "setup.py")
+        if os.path.exists(setup_py):
+            if license_file is None:
+                license_file = "setup.py"
+            with open(setup_py, 'r+') as f:
+                data = mmap.mmap(f.fileno(), 0)
+                match = re.search(b'^(\s*)setup_requires( *)=( *)([\[|\(]*)(.*)([\]|\)]*)', data, re.MULTILINE)
+                if match:
+                    for bd in match.group(5).replace(b'[', b'').replace(b']', b'').replace(b'(', b'').replace(b')', b'').strip().split(b","):
+                         build_deps.extend(gather_package_build_depends(bd, data))
+
+        pyproject_toml = os.path.join(tmpdir, src_dir, "pyproject.toml")
+        if os.path.exists(pyproject_toml):
+            if license_file is None:
+                license_file = "pyproject.toml"
+            with open(pyproject_toml, 'r+') as f:
+                data = mmap.mmap(f.fileno(), 0)
+                match = re.search(b'^(\s*)dependencies( *)=( *)([\[|\(]*)(.*)([\]|\)]*)', data, re.MULTILINE)
+                if match:
+                    for bd in match.group(5).replace(b'[', b'').replace(b']', b'').replace(b'(', b'').replace(b')', b'').strip().split(b","):
+                         build_deps.extend(gather_package_build_depends(bd, data))
+
 
 
         license_path = os.path.join(tmpdir, src_dir, license_file)
@@ -385,7 +411,9 @@ def get_package_info(
         homepage = info["info"]["home_page"]
         author = info["info"]["author"]
         author_email = info["info"]["author_email"]
-        license = translate_license(info["info"]["license"], default_license)
+        license = translate_license(info["info"]["license"],
+                                    info["info"]["classifiers"],
+                                    default_license)
 
         try:
             version_info = next(
