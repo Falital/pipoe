@@ -344,6 +344,50 @@ def get_package_dependencies(requires_dist, follow_extras=False):
 
 PROCESSED_PACKAGES = []
 
+def compare_versions(version1: str, version2: str) -> int:
+    """
+    Compares two pip package versions without using external modules.
+    Returns:
+        -1 if version1 < version2
+         0 if version1 == version2
+         1 if version1 > version2
+    """
+
+    if not version1:
+        return -1
+
+    def normalize(version: str):
+        """Converts version string into a list of integers for comparison."""
+        return [int(part) if part.isdigit() else part for part in version.replace("-", ".").split(".")]
+
+    v1_parts = normalize(version1)
+    v2_parts = normalize(version2)
+
+    for v1, v2 in zip(v1_parts, v2_parts):
+        if v1 == v2:
+            continue
+        if v1 < v2:
+            return -1
+        if v1 > v2:
+            return 1
+
+    return 0  # Versions are equal
+
+
+
+def check_package_already_processed(package_name, version,
+                                    processed_packages, packages):
+    all_packages = processed_packages + packages[0]
+    for package in all_packages:
+        if package_name == package.name:
+            result = compare_versions(version, package.version)
+            if result != 1:
+                return True
+            print("  {} [WARNING] Package {} version needed {} found {}"
+                  .format("|", package_name, version, package.version))
+
+    return False
+
 
 def get_package_info(
     package,
@@ -361,9 +405,7 @@ def get_package_info(
 
     if not packages:
         packages = [[]]
-    elif package_name in [package.name for package in PROCESSED_PACKAGES] or package_name in [
-        package.name for package in packages[0]
-    ]:
+    elif check_package_already_processed(package_name, version, PROCESSED_PACKAGES, packages):
         return packages[0]
 
     indent_str = ""
@@ -616,6 +658,45 @@ def generate_recipes(packages, outdir, python, follow_extras=False, pypi=False):
                 generate_recipe(extra_package, outdir, python, is_extra=True, use_pypi=pypi)
 
 
+def generate_oe_pypi_recipes(yocto_layers_dir, existing_packages, python_arg):
+    print("Gathering recipes in Yocto layers directory: {}".format(yocto_layers_dir))
+    with open(existing_packages, "w", encoding="utf-8") as outfile:
+        for root, _, files in os.walk(yocto_layers_dir):
+            for file in files:
+                pkg_start = python_arg + '-'
+                if file.startswith(pkg_start) and file.endswith(".bb"):
+                    if "-" in file and "_" in file:
+                        # Get the package name from file python3-webob_1.8.7.bb
+                        name = file.split('_')[0].split(pkg_start)[1]
+                        version = file.split('_')[1].split('.bb')[0]
+                        version_array = version.split('.')
+                        if len(version_array) > 1:
+                            outfile.write("{}=={}\n".format(name, version))
+                            continue
+                    file_path = os.path.join(root, file)
+                    print("Could not parse: {}".format(file_path))
+
+
+def parse_existing_packages(existing_packages):
+    with open(existing_packages, "r", encoding="utf-8") as infile:
+        for line in infile:
+            line = line.strip()
+            if "==" in line:
+                name = line.split("==")[0]
+                version = line.split("==")[1]
+            else:
+                name = line
+                version = None
+
+            nope = ''
+            package = Package(
+                name,
+                version,
+                nope,nope,nope,nope,nope,nope,nope,nope,nope,nope,nope,nope,nope
+            )
+            PROCESSED_PACKAGES.append(package)
+
+
 def main():
     try:
         parser = argparse.ArgumentParser()
@@ -634,7 +715,7 @@ def main():
             "--python",
             "-y",
             help="The python version to use.",
-            default="python",
+            default="python3",
             choices=["python", "python3"],
         )
         parser.add_argument(
@@ -655,7 +736,31 @@ def main():
             action="store_true",
             help="Use oe pypi class for recipe"
         )
+        parser.add_argument(
+            "--yocto-layers-dir",
+            help="Yocto layers directory",
+            default=None
+        )
+        parser.add_argument(
+            "--existing-packages",
+            help="The existing packages to process in pypi requirements file.",
+            default=None
+        )
+        parser.add_argument(
+            "--write-preferred",
+            action="store_true",
+            help="Write preferred versions to a file.",
+            default=False
+        )
         args = parser.parse_args()
+
+        if args.yocto_layers_dir and args.existing_packages:
+            generate_oe_pypi_recipes(args.yocto_layers_dir, args.existing_packages, args.python)
+            print("Existing packages are available in: {}".format(args.existing_packages))
+            sys.exit(0)
+
+        if args.existing_packages:
+            parse_existing_packages(args.existing_packages)
 
         print("Gathering info:")
         packages = []
@@ -675,11 +780,8 @@ def main():
         else:
             raise Exception("No packages provided!")
 
-        print("Generating recipes:")
+        print(f"Generating recipes ({len(packages)}):")
         generate_recipes(packages, args.outdir, args.python, args.extras, args.pypi)
-
-        version_file = os.path.join(args.outdir, "{}-versions.inc".format(args.python))
-        write_preferred_versions(packages, version_file, args.python)
 
         print()
         if args.licenses:
@@ -689,7 +791,10 @@ def main():
 
             print("License mappings are available in: {}".format(license_file))
 
-        print("PREFERRED_VERSIONS are available in: {}".format(version_file))
+        if args.write_preferred:
+            version_file = os.path.join(args.outdir, "{}-versions.inc".format(args.python))
+            write_preferred_versions(packages, version_file, args.python)
+            print("PREFERRED_VERSIONS are available in: {}".format(version_file))
 
     except Exception as e:
         print(str(e))

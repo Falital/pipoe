@@ -45,6 +45,13 @@ optional arguments:
                         The default license to use when the package license
                         cannot be mapped.
   --pypi, -s            Use oe pypi class for recipe
+  --yocto-layers-dir    Can be used together if --existing-packages to generate
+                        the existing packages in the yocto build system.
+  --existing-packages   A pypi requirements file containing the existing packages
+                        in the enviroment.
+  --write-preferred     Flag indicating if the preferred packages file should be
+                        created.
+
 > pipoe -p requests
 Gathering info:
   requests
@@ -52,7 +59,7 @@ Gathering info:
   | idna
   | urllib3
   | certifi
-Generating recipes:
+Generating recipes(5):
   python-requests_2.21.0.bb
   python-chardet_3.0.4.bb
   python-idna_2.8.bb
@@ -61,4 +68,39 @@ Generating recipes:
 
 License mappings are available in: ./licenses.py
 PREFERRED_VERSIONS are available in: ./python-versions.inc
+
+> pipoe --yocto-layers-dir ~/hgp-build --existing-packages requirements.txt
+Gathering recipes in Yocto layers directory: ~/hgp-build
+Could not parse: ~/hgp-build/meta-openembedded/meta-oe/recipes-devtools/flatbuffers/python3-flatbuffers.bb
+Could not parse: ~/hgp-build/meta-openembedded/meta-oe/recipes-printing/cups/python3-pycups.bb
+Could not parse: ~/hgp-build/meta-openembedded/meta-python/recipes-devtools/python/python3-systemd_235.bb
+Could not parse: ~/hgp-build/meta-openembedded/meta-python/recipes-devtools/python/python3-inotify_git.bb
+Could not parse: ~/hgp-build/meta-openembedded/meta-python/recipes-extended/python-cson/python3-cson_git.bb
+Could not parse: ~/hgp-build/meta-virtualization/recipes-devtools/python/python3-sphinx-420.bb
+Could not parse: ~/hgp-build/meta-virtualization/recipes-devtools/python/python3-udica_git.bb
+Existing packages are available in: requirements.txt
+
+> pipoe -p codechecker -v 6.25.1 --existing-packages requirements.txt
+Gathering info:
+  codechecker==6.25.1
+  | [WARNING] Package lxml version needed 5.3.0 found 5.0.2
+  | lxml==5.3.0
+  | [WARNING] Package setuptools version needed 70.2.0 found 69.1.1
+  | setuptools==70.2.0
+  | gitpython==3.1.41
+  | types-PyYAML==6.0.12.12
+  | sarif-tools==1.0.0
+  |-- python-docx
+  | PyYAML==6.0.1
+  | multiprocess==0.70.15
+Generating recipes (9):
+  python3-codechecker_6.25.1.bb
+  python3-lxml_5.3.0.bb
+  python3-setuptools_70.2.0.bb
+  python3-gitpython_3.1.41.bb
+  python3-types-pyyaml_6.0.12.12.bb
+  python3-sarif-tools_1.0.0.bb
+  python3-python-docx_1.1.2.bb
+  python3-pyyaml_6.0.1.bb
+  python3-multiprocess_0.70.15.bb
 ```
