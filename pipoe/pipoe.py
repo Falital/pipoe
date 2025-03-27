@@ -299,23 +299,28 @@ def pkg_size(pkg):
 def fetch_requirements_from_remote_package(info, version):
     """ Looks up requires_dist from an actual package """
 
-    # Version must exists, otherwise previous steps failed
-    pkg_versions = info["releases"][version]
+    if "releases" in info:
+        # Version must exists, otherwise previous steps failed
+        pkg_versions = info["releases"][version]
 
-    # If we must fetch a package, lets fetch the smallest one
-    pkg_url = sorted(pkg_versions, key=pkg_size, reverse=False)[0]["url"]
-    filename = pkg_url.split("/")[-1]
+        # If we must fetch a package, lets fetch the smallest one
+        pkg_url = sorted(pkg_versions, key=pkg_size, reverse=False)[0]["url"]
+        filename = pkg_url.split("/")[-1]
 
-    # Select the appropriate parser from pkginfo based on the filename
-    parse = None
-    if filename.endswith(".tar.gz") or filename.endswith(".zip") or filename.endswith(".tar.xz") or filename.endswith(".tar.bz2") or filename.endswith(".tar"):
-        parse = pkginfo.SDist
-    elif filename.endswith(".whl"):
-        parse = pkginfo.Wheel
-    elif filename.endswith(".egg"):
-        parse =pkginfo.BDist
+        # Select the appropriate parser from pkginfo based on the filename
+        parse = None
+        if filename.endswith(".tar.gz") or filename.endswith(".zip") or filename.endswith(".tar.xz") or filename.endswith(".tar.bz2") or filename.endswith(".tar"):
+            parse = pkginfo.SDist
+        elif filename.endswith(".whl"):
+            parse = pkginfo.Wheel
+        elif filename.endswith(".egg"):
+            parse =pkginfo.BDist
+        else:
+            raise RuntimeError("Unsupported fileformat for package introspection: {}".format(filename))
     else:
-        raise RuntimeError("Unsupported fileformat for package introspection: {}".format(filename))
+        pkg_url = info["info"]["url"]
+        filename = pkg_url.split("/")[-1]
+        parse = pkginfo.SDist
 
     # Download the package and read the MANIFEST
     with tempfile.TemporaryDirectory() as directory:
@@ -406,7 +411,8 @@ def get_package_info(
         info = json.loads(response)
 
         name = package_name
-        version = info["info"]["version"]
+        if not version:
+            version = info["info"]["version"]
         summary = info["info"]["summary"].replace('\n', ' \\\n')
         homepage = info["info"]["home_page"]
         author = info["info"]["author"]
@@ -416,10 +422,18 @@ def get_package_info(
                                     default_license)
 
         try:
-            version_info = next(
-                i for i in info["releases"][version] if i["packagetype"] == "sdist"
-            )
-        except:
+            if "releases" in info and version in info["releases"]:
+                version_info = next(
+                    i for i in info["releases"][version] if i["packagetype"] == "sdist"
+                )
+            else:
+                version_info = info["info"]
+                if "url" not in version_info and "urls" in info:
+                    url = next(
+                        i for i in info["urls"] if i["packagetype"] == "sdist"
+                    )
+                    version_info["url"] = url["url"]
+        except Exception as e:
             raise Exception("No sdist package can be found.")
 
         src_uri = version_info["url"]
